@@ -1,13 +1,12 @@
 import ctypes
 import wx
-import os  # Add import
+import os
+from backend import SaveManager
 
 try:
     ctypes.windll.shcore.SetProcessDpiAwareness(1)
 except Exception:
     pass
-
-app = wx.App(False)
 
 # Add constant ID
 ID_SELECT_SAVE_DIR = wx.NewId()
@@ -17,21 +16,24 @@ class MainFrame(wx.Frame):
         super(MainFrame, self).__init__(*args, **kwargs)
         self.savesTree = None
         self.SetTitle("Minecraft Git Manager")
-        self.SetSize((1000, 650))
+        self.SetSize((1500, 850))
         
-        # Save references to current directory and important controls
-        self.current_save_dir = ""
-        self.current_save_label = None  # Reference to the current save name label
-        self.save_path_label = None     # Reference to the save path label
+        # Initialize backend
+        self.save_manager = SaveManager()
+        self.save_manager.load_config()
+        
+        # Save references to important controls
+        self.current_save_label = None
+        self.save_path_label = None
         
         self.InitUI()
+        self.LoadSavesIntoTree()
 
     def InitUI(self):
         # Menu Bar
         menuBar = wx.MenuBar()
 
         fileMenu = wx.Menu()
-        # Use our custom ID
         fileMenu.Append(ID_SELECT_SAVE_DIR, "Select Save Directory")
         fileMenu.AppendSeparator()
         fileMenu.Append(wx.ID_ANY, "Preferences")
@@ -87,17 +89,15 @@ class MainFrame(wx.Frame):
         leftSizer.Add(self.savesTree, 1, wx.EXPAND | wx.ALL, 5)
         leftPanel.SetSizer(leftSizer)
 
-        # Bind remove button event
+        # Bind button events
         btnRemove.Bind(wx.EVT_BUTTON, self.OnRemoveSave)
+        btnRefresh.Bind(wx.EVT_BUTTON, self.OnRefreshSaves)
+        
         # Bind tree selection event
         self.savesTree.Bind(wx.EVT_TREE_SEL_CHANGED, self.OnSaveSelected)
 
-        # Populate Saves Tree
-        rootItem = self.savesTree.AddRoot("Saves")
-        self.savesTree.AppendItem(rootItem, "MyWorld1")
-        self.savesTree.AppendItem(rootItem, "Survival Server")
-        self.savesTree.AppendItem(rootItem, "Creative Build")
-        self.savesTree.Expand(rootItem)
+        # Initialize Saves Tree
+        self.savesTree.AddRoot("Saves")
 
         # Right Panel: Notebook Tabs
         notebook = wx.Notebook(rightPanel)
@@ -123,7 +123,7 @@ class MainFrame(wx.Frame):
     def CreateOverviewTab(self, notebook):
         panel = wx.Panel(notebook)
         sizer = wx.BoxSizer(wx.VERTICAL)
-        # Save label reference
+        
         self.current_save_label = wx.StaticText(panel, label="Current Save: None")
         font = self.current_save_label.GetFont()
         font.PointSize += 4
@@ -155,17 +155,17 @@ class MainFrame(wx.Frame):
         infoSizer = wx.StaticBoxSizer(infoBox, wx.VERTICAL)
         lblPath = wx.StaticText(panel, label="Save Path:")
         infoSizer.Add(lblPath, flag=wx.TOP | wx.LEFT, border=5)
-        # Save path label reference
+        
         self.save_path_label = wx.StaticText(panel, label="Not selected")
         infoSizer.Add(self.save_path_label, flag=wx.LEFT | wx.BOTTOM, border=5)
         lblModified = wx.StaticText(panel, label="Last Modified:")
         infoSizer.Add(lblModified, flag=wx.LEFT, border=5)
-        lblModifiedVal = wx.StaticText(panel, label="Today at 14:32")
-        infoSizer.Add(lblModifiedVal, flag=wx.LEFT | wx.BOTTOM, border=5)
+        self.last_modified_label = wx.StaticText(panel, label="N/A")
+        infoSizer.Add(self.last_modified_label, flag=wx.LEFT | wx.BOTTOM, border=5)
         lblCommit = wx.StaticText(panel, label="Last Commit:")
         infoSizer.Add(lblCommit, flag=wx.LEFT, border=5)
-        lblCommitVal = wx.StaticText(panel, label="Added new farm area (12 hours ago)")
-        infoSizer.Add(lblCommitVal, flag=wx.LEFT | wx.BOTTOM, border=5)
+        self.last_commit_label = wx.StaticText(panel, label="N/A")
+        infoSizer.Add(self.last_commit_label, flag=wx.LEFT | wx.BOTTOM, border=5)
         gridSizer.Add(infoSizer, 1, wx.EXPAND)
 
         sizer.Add(gridSizer, 1, wx.EXPAND | wx.ALL, 10)
@@ -211,86 +211,74 @@ class MainFrame(wx.Frame):
 
         panel.SetSizer(sizer)
         notebook.AddPage(panel, "Settings")
+    
+    def LoadSavesIntoTree(self):
+        """Load all saves into the tree view"""
+        rootItem = self.savesTree.GetRootItem()
+        self.savesTree.DeleteChildren(rootItem)
+        
+        all_saves = self.save_manager.get_all_saves()
+        for save_name, save_path in all_saves.items():
+            item = self.savesTree.AppendItem(rootItem, save_name)
+            self.savesTree.SetItemData(item, save_path)
+        
+        self.savesTree.Expand(rootItem)
+        
+        # Select current save if available
+        current_save, _ = self.save_manager.get_current_save()
+        if current_save:
+            self.SelectSaveInTree(current_save)
+    
+    def SelectSaveInTree(self, save_name):
+        """Select a save in the tree view by name"""
+        rootItem = self.savesTree.GetRootItem()
+        
+        child, cookie = self.savesTree.GetFirstChild(rootItem)
+        while child.IsOk():
+            if self.savesTree.GetItemText(child) == save_name:
+                self.savesTree.SelectItem(child)
+                return True
+            child, cookie = self.savesTree.GetNextChild(rootItem, cookie)
+        
+        return False
         
     def OnSelectSaveDirectory(self, event):
-        """Open directory selection dialog and update savesTree"""
+        """Open a dialog to select a save directory"""
+        current_save, current_path = self.save_manager.get_current_save()
+        defaultPath = current_path if current_path else ""
+        
         dlg = wx.DirDialog(
             self, 
             "Select save path:",
-            defaultPath=self.current_save_dir,
+            defaultPath=defaultPath,
             style=wx.DD_DEFAULT_STYLE | wx.DD_DIR_MUST_EXIST
         )
         
         if dlg.ShowModal() == wx.ID_OK:
             save_path = dlg.GetPath()
-            self.current_save_dir = save_path
-            self.UpdateSavesTree(save_path)
+            success, message = self.save_manager.add_save(save_path)
             
-            # Update path info in Overview tab
-            self.UpdateSavePathDisplay(save_path)
+            self.SetStatusText(message)
+            if success:
+                self.LoadSavesIntoTree()
+                self.UpdateSaveDisplay()
+                self.save_manager.save_config()
+            else:
+                wx.MessageBox(message, "Error", wx.OK | wx.ICON_ERROR)
         
         dlg.Destroy()
     
-    def UpdateSavesTree(self, directory):
-        # Get root item
-        rootItem = self.savesTree.GetRootItem()
-        
-        # Check if directory is valid
-        if os.path.exists(directory) and os.path.isdir(directory):
-            # Get directory name as save name
-            save_name = os.path.basename(directory)
-            
-            # Check if it already exists
-            existing = False
-            child, cookie = self.savesTree.GetFirstChild(rootItem)
-            while child.IsOk():
-                if self.savesTree.GetItemText(child) == save_name:
-                    existing = True
-                    selected_item = child
-                    break
-                child, cookie = self.savesTree.GetNextChild(rootItem, cookie)
-            
-            # If it doesn't exist, add it to the tree
-            if not existing:
-                new_item = self.savesTree.AppendItem(rootItem, save_name)
-                self.savesTree.SetItemData(new_item, directory)
-                selected_item = new_item
-                self.SetStatusText(f"Added save: {save_name}")
-            else:
-                self.SetStatusText(f"Save already exists: {save_name}")
-            
-            # Select the item and update display
-            self.savesTree.SelectItem(selected_item)
-            self.UpdateSaveDisplay(save_name, directory)
-        else:
-            wx.MessageBox(f"Invalid directory: {directory}", "Error", wx.OK | wx.ICON_ERROR)
-        
-        # Ensure root node is expanded
-        self.savesTree.Expand(rootItem)
+    def OnRefreshSaves(self, event):
+        """Refresh the list of saves in the tree view"""
+        self.LoadSavesIntoTree()
+        self.SetStatusText("Saves refreshed")
     
-    def UpdateSavePathDisplay(self, directory):
-        # Get directory name as save name
-        save_name = os.path.basename(directory)
-        self.UpdateSaveDisplay(save_name, directory)
-
-    def UpdateSaveDisplay(self, save_name, directory):
-        # Update labels
-        if self.current_save_label:
-            self.current_save_label.SetLabel(f"Current Save: {save_name}")
-        
-        # Update path
-        if self.save_path_label:
-            self.save_path_label.SetLabel(directory)
-        
-        # Update current directory
-        self.current_save_dir = directory
-
     def OnRemoveSave(self, event):
+        """Remove the selected save from the list"""
         selected = self.savesTree.GetSelection()
         if selected.IsOk() and selected != self.savesTree.GetRootItem():
             save_name = self.savesTree.GetItemText(selected)
             
-            # Confirm removal
             dlg = wx.MessageDialog(
                 self,
                 f"Are you sure you want to remove '{save_name}' from the list?\n(This will not delete files from disk)",
@@ -299,31 +287,49 @@ class MainFrame(wx.Frame):
             )
             
             if dlg.ShowModal() == wx.ID_YES:
-                self.savesTree.Delete(selected)
-                # Reset display
-                if self.current_save_label:
-                    self.current_save_label.SetLabel("Current Save: None")
-                if self.save_path_label:
-                    self.save_path_label.SetLabel("Not selected")
-                self.current_save_dir = ""
-                self.SetStatusText(f"Removed from list: {save_name}")
+                success, message = self.save_manager.remove_save(save_name)
+                
+                if success:
+                    self.savesTree.Delete(selected)
+                    self.UpdateSaveDisplay()
+                    self.save_manager.save_config()
+                
+                self.SetStatusText(message)
             
             dlg.Destroy()
 
     def OnSaveSelected(self, event):
-        """Triggered when a save is selected in the tree"""
+        """Triggered when a save is selected in the tree view"""
         item = event.GetItem()
-        # Confirm it's a valid item and not root
         if item.IsOk() and item != self.savesTree.GetRootItem():
             save_name = self.savesTree.GetItemText(item)
-            directory = self.savesTree.GetItemData(item)
-            if directory:
-                self.UpdateSaveDisplay(save_name, directory)
-
-if __name__ == '__main__':
-    default_font = wx.Font(10, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL)
-    default_font.SetFaceName("Segoe UI")
-
-    frame = MainFrame(None)
-    frame.Show()
-    app.MainLoop()
+            self.save_manager.set_current_save(save_name)
+            self.UpdateSaveDisplay()
+            self.save_manager.save_config()
+    
+    def UpdateSaveDisplay(self):
+        """Update the current save display"""
+        current_save, current_path = self.save_manager.get_current_save()
+        
+        if current_save:
+            # Update save name
+            if self.current_save_label:
+                self.current_save_label.SetLabel(f"Current Save: {current_save}")
+            
+            # Update save path
+            if self.save_path_label:
+                self.save_path_label.SetLabel(current_path)
+            
+            # Get and update additional save info
+            save_info = self.save_manager.get_save_info(current_save)
+            if save_info:
+                self.last_modified_label.SetLabel(save_info["last_modified"])
+                self.last_commit_label.SetLabel(save_info["last_commit"])
+        else:
+            # Reset labels when no save is selected
+            if self.current_save_label:
+                self.current_save_label.SetLabel("Current Save: None")
+            if self.save_path_label:
+                self.save_path_label.SetLabel("Not selected")
+            self.last_modified_label.SetLabel("N/A")
+            self.last_commit_label.SetLabel("N/A")
