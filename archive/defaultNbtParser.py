@@ -32,7 +32,6 @@ def convert_nbt_to_special_json(nbt_data):
         # Optimize float formatting to remove trailing .0 for whole numbers
         float_val = float(nbt_data)
         if float_val == int(float_val):
-            # If the float is a whole number, return as an integer
             return f"{int(float_val)}f"
         else:
             return f"{float_val}f"
@@ -41,10 +40,13 @@ def convert_nbt_to_special_json(nbt_data):
     elif isinstance(nbt_data, nbtlib.tag.String):
         return str(nbt_data)
     elif isinstance(nbt_data, nbtlib.tag.ByteArray):
+        # No spaces after commas in byte arrays
         return f"[B;{','.join(str(int(b)) for b in nbt_data)}]"
     elif isinstance(nbt_data, nbtlib.tag.IntArray):
+        # No spaces after commas in int arrays
         return f"[I;{','.join(str(int(i)) for i in nbt_data)}]"
     elif isinstance(nbt_data, nbtlib.tag.LongArray):
+        # No spaces after commas in long arrays
         return f"[L;{','.join(str(int(l)) for l in nbt_data)}]"
     elif isinstance(nbt_data, nbtlib.tag.List):
         return [convert_nbt_to_special_json(item) for item in nbt_data]
@@ -113,9 +115,28 @@ def remove_quotes_from_keys(json_text):
     
     return json_text
 
+def fix_array_spacing(json_text):
+    """
+    Fix spacing in array notations to match SNBT format
+    """
+    # Fix spacing in typed arrays [B;...], [I;...], [L;...]
+    for array_type in ['B', 'I', 'L']:
+        pattern = f'\\[{array_type};(.*?)\\]'
+        for match in re.finditer(pattern, json_text):
+            array_content = match.group(1)
+            # Remove all spaces in array content
+            clean_content = re.sub(r'\s+', '', array_content)
+            json_text = json_text.replace(f"[{array_type};{array_content}]", f"[{array_type};{clean_content}]")
+    
+    # Fix spacing in regular arrays
+    json_text = re.sub(r'\[\s+', r'[', json_text)  # Remove space after opening bracket
+    json_text = re.sub(r'\s+\]', r']', json_text)  # Remove space before closing bracket
+    
+    return json_text
+
 def save_nbt_to_json(nbt_data, output_path):
     """
-    Save the parsed NBT data to a JSON file with the correct format
+    Save the parsed NBT data to a JSON file with the correct SNBT format
     """
     try:
         # Convert the NBT data to our special JSON format
@@ -127,54 +148,82 @@ def save_nbt_to_json(nbt_data, output_path):
         # Post-process to remove quotes from keys and special type values
         formatted_str = remove_quotes_from_keys(json_str)
         
+        # Fix array spacings
+        formatted_str = fix_array_spacing(formatted_str)
+        
         # Further format adjustments to match original exactly
         lines = formatted_str.splitlines()
         formatted_lines = []
         
-        # Track if we're in an array to handle brace alignment
-        in_array = False
-        array_indent = 0
+        # Stack to track the current nesting structure (compound or list)
+        context_stack = []
         
         # Process each line
         for i, line in enumerate(lines):
-            # Count leading spaces
+            # Get stripped content and count leading spaces
+            content = line.strip()
             leading_spaces = len(line) - len(line.lstrip())
+            indent_level = leading_spaces // 2
             
-            # Get content part (after spaces)
-            content = line.lstrip()
+            # Update nesting context
+            if content.endswith('{'):
+                context_stack.append('compound')
+            elif content.endswith('[') and not any(content.startswith(f'[{t};') for t in 'BIL'):
+                context_stack.append('list')
+            elif content == '}' and context_stack and context_stack[-1] == 'compound':
+                context_stack.pop()
+            elif content == ']' and context_stack and context_stack[-1] == 'list':
+                context_stack.pop()
             
-            # For the first line (opening brace), keep as is
-            if content == '{' and i == 0:
-                formatted_lines.append(line)
-                continue
+            # Apply spacing rules based on context
+            current_context = context_stack[-1] if context_stack else None
             
-            # Track array state
-            if '[' in content and ']' not in content and not content.startswith('[B;') and not content.startswith('[I;') and not content.startswith('[L;'):
-                in_array = True
-                array_indent = leading_spaces
-            
-            if content == ']' or (']' in content and not content.endswith(',')):
-                in_array = False
-            
-            # Adjust brace alignment in arrays
-            if in_array and content == '{':
-                # Align opening braces with array indent + 6 spaces
-                formatted_lines.append(' ' * (array_indent + 4) + '{')
+            # First line special case (no indent)
+            if i == 0 and content == '{':
+                formatted_lines.append(content)
                 continue
                 
-            # For all other lines, adjust indentation
-            adjusted_spaces = leading_spaces + 2
-            formatted_lines.append(' ' * adjusted_spaces + content)
+            # Handle empty objects/arrays
+            if (content == '}' or content == ']') and i > 0:
+                prev_line = formatted_lines[-1].rstrip()
+                if prev_line.endswith('{') or prev_line.endswith('['):
+                    # Empty object/array - keep on same line
+                    formatted_lines[-1] = f"{prev_line}{content}"
+                    continue
             
-        # Join lines and write to file
+            # Apply standard indentation
+            indent_spaces = indent_level * 2
+            
+            # Special case for items in lists
+            if current_context == 'list' and content.startswith('{'):
+                # Objects in lists need consistent spacing
+                formatted_lines.append(' ' * indent_spaces + content)
+            else:
+                formatted_lines.append(' ' * indent_spaces + content)
+        
+        # Join lines and apply final formatting fixes
         final_output = '\n'.join(formatted_lines)
+        
+        # Ensure consistent spacing around colons
+        final_output = re.sub(r'(\w+)\s*:\s*', r'\1: ', final_output)
+        
+        # Ensure no spaces between value and type suffix (e.g. "1 b" -> "1b")
+        final_output = re.sub(r'(\d+)\s+([bsfL])', r'\1\2', final_output)
+        
+        # Fix spaces in simple lists (for better readability)
+        final_output = re.sub(r',\s+(-?\d+[bsfL]?)', r', \1', final_output)
+        
+        # Compact small lists on one line if appropriate
+        final_output = re.sub(r'\[\s*(-?\d+[bsfL]?),\s*(-?\d+[bsfL]?)\s*\]', r'[\1, \2]', final_output)
         
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write(final_output)
             
         print(f"Parsed data saved to {output_path}")
+        return True
     except Exception as e:
         print(f"Failed to save parsed data: {e}")
+        return False
 
 def main():
     if len(sys.argv) < 2:
@@ -184,12 +233,12 @@ def main():
     filepath = sys.argv[1]
     
     if not os.path.isfile(filepath):
-        print(f"File does not exist: {filepath}")
+        print(f"Error: File does not exist: {filepath}")
         sys.exit(1)
     
     # Skip region files which are handled differently
     if filepath.endswith('.mca'):
-        print("Region files (.mca) are not handled by this script.")
+        print("Error: Region files (.mca) are not handled by this script.")
         sys.exit(1)
     
     # Default to Big Endian for most Minecraft files
@@ -225,7 +274,8 @@ def main():
     output_path = filepath + '.json'
     
     # Save the parsed data to the output file
-    save_nbt_to_json(nbt_file, output_path)
+    if not save_nbt_to_json(nbt_file, output_path):
+        sys.exit(1)
     
 if __name__ == "__main__":
     main()
