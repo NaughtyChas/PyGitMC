@@ -1,0 +1,147 @@
+<Window x:Class="GitMinecraft.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:GitMinecraft"
+        mc:Ignorable="d"
+        Title="Minecraft Git Manager" Height="650" Width="1000">
+    <DockPanel>
+        <!-- Top Menu Bar -->
+        <Menu DockPanel.Dock="Top">
+            <MenuItem Header="File">
+                <MenuItem Header="Select Save Directory" />
+                <MenuItem Header="Open Repository" />
+                <MenuItem Header="Create New Repository" />
+                <Separator />
+                <MenuItem Header="Exit" />
+            </MenuItem>
+            <MenuItem Header="Repository">
+                <MenuItem Header="Build Save" />
+                <MenuItem Header="Commit Changes" />
+                <MenuItem Header="View History" />
+            </MenuItem>
+            <MenuItem Header="Tools">
+                <MenuItem Header="Manual Translation" />
+                <MenuItem Header="Settings" />
+            </MenuItem>
+            <MenuItem Header="Help">
+                <MenuItem Header="About" />
+                <MenuItem Header="Documentation" />
+            </MenuItem>
+        </Menu>
+
+        <!-- Top Icon Toolbar -->
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Background="#F0F0F0" Margin="5">
+            <Button Width="70" Height="50" Margin="5" Click="AddSave_Click">
+                <StackPanel>
+                    <TextBlock Text="+" FontSize="12" HorizontalAlignment="Center" Margin="0,5,0,0"/>
+                    <TextBlock Text="Add save" HorizontalAlignment="Center" Margin="0,5,0,0"/>
+                </StackPanel>
+            </Button>
+            <Button Width="70" Height="50" Margin="5">
+                <StackPanel>
+                    <TextBlock Text="🔄" FontSize="12" HorizontalAlignment="Center" Margin="0,5,0,0"/>
+                    <TextBlock Text="Translate" HorizontalAlignment="Center" Margin="0,5,0,0"/>
+                </StackPanel>
+            </Button>
+            <Button Width="70" Height="50" Margin="5">
+                <StackPanel>
+                    <TextBlock Text="🔨" FontSize="12" HorizontalAlignment="Center" Margin="0,5,0,0"/>
+                    <TextBlock Text="Build" HorizontalAlignment="Center" Margin="0,5,0,0"/>
+                </StackPanel>
+            </Button>
+        </StackPanel>
+
+        <!-- Status Bar -->
+        <StatusBar DockPanel.Dock="Bottom" Height="25">
+            <StatusBarItem>
+                <TextBlock x:Name="StatusText" Text="Ready" />
+            </StatusBarItem>
+        </StatusBar>
+
+        <!-- Main Content Area with Split Panel -->
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="250" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Left Panel - Repositories/Saves -->
+            <DockPanel Grid.Column="0" Margin="5">
+                <TextBlock DockPanel.Dock="Top" FontWeight="Bold" Margin="0,0,0,5">Minecraft Saves</TextBlock>
+                <Button DockPanel.Dock="Top" Content="Refresh Saves" Margin="0,0,0,5" Height="25"/>
+                <TreeView x:Name="SavesTreeView">
+                    <TreeViewItem Header="Saves" IsExpanded="True">
+                        <TreeViewItem Header="MyWorld1" />
+                        <TreeViewItem Header="Survival Server" />
+                        <TreeViewItem Header="Creative Build" />
+                    </TreeViewItem>
+                </TreeView>
+            </DockPanel>
+
+            <!-- Right Panel - Main Content -->
+            <TabControl Grid.Column="1" Margin="5">
+                <TabItem Header="Overview">
+                    <Grid Margin="10">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" FontSize="18" FontWeight="Bold" Text="Current Save: MyWorld1"/>
+                        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,10,0,10">
+                            <Button Content="Build Save" Margin="0,0,5,0" Padding="5"/>
+                            <Button Content="Commit Changes" Margin="0,0,5,0" Padding="5"/>
+                            <Button Content="View History" Padding="5"/>
+                        </StackPanel>
+                        <Grid Grid.Row="2">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <GroupBox Grid.Column="0" Header="Modified Files" Margin="0,0,5,0">
+                                <ListView x:Name="ModifiedFilesList">
+                                    <!-- Files will be populated here -->
+                                </ListView>
+                            </GroupBox>
+                            <GroupBox Grid.Column="1" Header="Save Information" Margin="5,0,0,0">
+                                <StackPanel>
+                                    <TextBlock Text="Save Path:" FontWeight="Bold"/>
+                                    <TextBlock Text="C:\Users\Username\AppData\Roaming\.minecraft\saves\MyWorld1" Margin="0,0,0,10"/>
+                                    <TextBlock Text="Last Modified:" FontWeight="Bold"/>
+                                    <TextBlock Text="Today at 14:32" Margin="0,0,0,10"/>
+                                    <TextBlock Text="Last Commit:" FontWeight="Bold"/>
+                                    <TextBlock Text="Added new farm area (12 hours ago)" Margin="0,0,0,10"/>
+                                </StackPanel>
+                            </GroupBox>
+                        </Grid>
+                    </Grid>
+                </TabItem>
+                <TabItem Header="Translation">
+                    <Grid Margin="10">
+                        <TextBlock Text="Manual translation tools will be here" />
+                    </Grid>
+                </TabItem>
+                <TabItem Header="Commit History">
+                    <Grid Margin="10">
+                        <TextBlock Text="Commit history will be displayed here" />
+                    </Grid>
+                </TabItem>
+                <TabItem Header="Settings">
+                    <Grid Margin="10">
+                        <StackPanel>
+                            <TextBlock Text="Minecraft Directory:" FontWeight="Bold"/>
+                            <DockPanel Margin="0,5,0,10">
+                                <Button DockPanel.Dock="Right" Content="Browse..." Width="80"/>
+                                <TextBox IsReadOnly="True" Text="C:\Users\Username\AppData\Roaming\.minecraft"/>
+                            </DockPanel>
+                            <CheckBox Content="Auto-build save on commit" Margin="0,5,0,5"/>
+                            <CheckBox Content="Create backup before changes" Margin="0,5,0,5"/>
+                        </StackPanel>
+                    </Grid>
+                </TabItem>
+            </TabControl>
+        </Grid>
+    </DockPanel>
+</Window>
